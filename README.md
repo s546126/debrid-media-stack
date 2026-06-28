@@ -1,4 +1,4 @@
-# medialib
+# debrid-media-stack
 
 A self-hosted media pipeline built on Docker Compose: request a movie or show, it
 gets pulled from **Real-Debrid** (no local seeding/storage of the torrent), mounted
@@ -74,7 +74,7 @@ the docker bridge using the sidecar's network **alias** = service name, so e.g.
 ## Setup
 
 ```bash
-git clone <this-repo> medialib && cd medialib
+git clone https://github.com/s546126/debrid-media-stack.git && cd debrid-media-stack
 
 # 1. Secrets / env
 cp .env.example .env && chmod 600 .env
