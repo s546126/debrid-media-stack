@@ -1,0 +1,26 @@
+{
+  "url_base": "/",
+  "port": "8282",
+  "log_level": "info",
+  "use_auth": false,
+  "download_folder": "/mnt/data/media/library",
+  "refresh_interval": "30s",
+  "categories": ["sonarr", "radarr"],
+  "default_download_action": "symlink",
+  "retries": 3,
+  "repair": {
+    "source": "arr",
+    "workers": 5,
+    "nntp_connection_percent": 20,
+    "strategy": "per_entry",
+    "recheck_interval": "168h"
+  },
+  "debrids": [
+    {
+      "name": "realdebrid",
+      "api_key": "YOUR_REAL_DEBRID_API_TOKEN",
+      "folder": "/mnt/zurg/__all__",
+      "rate_limit": "250/minute"
+    }
+  ]
+}

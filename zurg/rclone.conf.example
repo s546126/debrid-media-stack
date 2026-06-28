@@ -1,0 +1,19 @@
+# Copy to zurg/rclone.conf
+#   cp zurg/rclone.conf.example zurg/rclone.conf
+#
+# The [zurg] remote needs no credentials — it talks to the zurg container over the
+# docker network. The [alist] remote is only needed if you run the optional alist
+# service; set `user`/`pass` to your alist login (or delete the [alist] block).
+
+[zurg]
+type = webdav
+url = http://zurg:9999/dav
+vendor = other
+pacer_min_sleep = 0
+
+[alist]
+type = webdav
+url = http://alist:5244/dav
+vendor = other
+user = admin
+pass = YOUR_ALIST_PASSWORD

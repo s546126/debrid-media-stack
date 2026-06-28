@@ -1,0 +1,38 @@
+# Copy to zurg/config.yml and set your Real-Debrid token.
+#   cp zurg/config.yml.example zurg/config.yml
+zurg: v1
+token: YOUR_REAL_DEBRID_API_TOKEN        # https://real-debrid.com/apitoken
+# host: "[::]"
+# port: 9999
+# username:
+# password:
+# proxy:
+# concurrent_workers: 20
+check_for_changes_every_secs: 10
+# repair_every_mins: 60
+enable_repair: true
+auto_delete_rar_torrents: true
+# Triggers a Plex partial scan when zurg detects library changes.
+# Configure zurg/scripts/plex_update.sh with your Plex URL + token, or remove this line.
+on_library_update: sh plex_update.sh "$@"
+
+directories:
+  anime:
+    group_order: 10
+    group: media
+    filters:
+      - regex: /\b[a-fA-F0-9]{8}\b/
+      - any_file_inside_regex: /\b[a-fA-F0-9]{8}\b/
+
+  shows:
+    group_order: 20
+    group: media
+    filters:
+      - has_episodes: true
+
+  movies:
+    group_order: 30
+    group: media
+    only_show_the_biggest_file: true
+    filters:
+      - regex: /.*/

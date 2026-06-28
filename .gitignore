@@ -1,0 +1,27 @@
+# ── secrets ──────────────────────────────────────────────────────────────────
+.env
+
+# ── runtime app config + state (created by the containers on first run) ───────
+*-config/
+*-cache/
+plex-transcode/
+alist/
+cache/
+
+# carve-out: ship the decypharr config template even though *-config/ is ignored
+!decypharr-config/
+decypharr-config/*
+!decypharr-config/config.json.example
+
+# ── secret-bearing bootstrap configs (ship the .example, ignore the real one) ─
+zurg/config.yml
+zurg/rclone.conf
+
+# ── tailscale sidecar local state (named volumes, but ignore stray dirs) ──────
+**/tailscale/
+
+# ── misc ─────────────────────────────────────────────────────────────────────
+*.bak
+*.bak[0-9]
+*.log
+.DS_Store

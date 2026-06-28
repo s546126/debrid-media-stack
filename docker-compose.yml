@@ -1,0 +1,175 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# medialib — storage + playback layer
+#
+#   zurg        Real-Debrid  -> WebDAV
+#   rclone      mounts zurg   -> /mnt/zurg   (FUSE, rshared)
+#   alist       cloud-drive aggregation (optional: baidu / quark / etc.)
+#   rclone-alist mounts alist -> /mnt/alist  (FUSE, rshared)
+#   plex        player (host network)
+#   jellyfin    player (behind its own tailscale sidecar, tailnet-only)
+#
+# The acquisition layer (Prowlarr/Sonarr/Radarr/Bazarr/Jellyseerr/Decypharr)
+# lives in docker-compose.arr.yml as a SEPARATE compose project.
+#
+# See README.md before first run — the /mnt mount-propagation chain and the
+# Tailscale prerequisites are not optional.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  zurg:
+    image: ghcr.io/debridmediamanager/zurg-testing:latest
+    container_name: zurg
+    restart: unless-stopped
+    # Bound to loopback only. rclone reaches it via the container DNS name `zurg`,
+    # so this port never needs to be exposed beyond the host.
+    ports:
+      - 127.0.0.1:9999:9999
+    volumes:
+      - ./zurg/scripts/plex_update.sh:/app/plex_update.sh
+      - ./zurg/config.yml:/app/config.yml          # copy from zurg/config.yml.example
+      - zurgdata:/app/data
+
+  rclone:
+    image: rclone/rclone:latest
+    container_name: rclone
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - /mnt/zurg:/data:rshared                     # FUSE mount, propagated to siblings
+      - ./zurg/rclone.conf:/config/rclone/rclone.conf
+      - ./cache/zurg:/cache
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    devices:
+      - /dev/fuse:/dev/fuse:rwm
+    depends_on:
+      - zurg
+    command: "mount zurg: /data --allow-other --allow-non-empty --dir-cache-time 10s --vfs-cache-mode full --cache-dir /cache --vfs-cache-max-size 20G --buffer-size 64M"
+
+  # ── optional: cloud-drive aggregation (alist) ───────────────────────────────
+  # Drop the alist / alist-ts / rclone-alist services if you only use Real-Debrid.
+  alist:
+    image: xhofe/alist:latest
+    container_name: alist
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK=022
+      - TZ=${TZ:-UTC}
+      - GODEBUG=netdns=go+v4
+    volumes:
+      - ./alist:/opt/alist/data
+    network_mode: "service:alist-ts"
+    depends_on:
+      - alist-ts
+
+  alist-ts:
+    image: tailscale/tailscale:latest
+    container_name: alist-ts
+    restart: unless-stopped
+    hostname: alist
+    environment:
+      - TS_HOSTNAME=alist
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=true
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale-alist:/var/lib/tailscale
+      - ./alist-ts:/config
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  rclone-alist:
+    image: rclone/rclone:latest
+    container_name: rclone-alist
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - /mnt/alist:/data:rshared
+      - ./zurg/rclone.conf:/config/rclone/rclone.conf
+      - ./cache/alist:/cache
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    devices:
+      - /dev/fuse:/dev/fuse:rwm
+    depends_on:
+      - alist
+    command: "mount alist: /data --allow-other --allow-non-empty --dir-cache-time 30s --vfs-cache-mode full --cache-dir /cache --vfs-cache-max-size 10G --buffer-size 32M"
+
+  # ── players ─────────────────────────────────────────────────────────────────
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    restart: unless-stopped
+    network_mode: host                              # Plex has its own account auth
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - GODEBUG=netdns=go+v4
+      - VERSION=docker
+    volumes:
+      - ./plex-config:/config
+      - ./plex-transcode:/transcode
+      - /mnt/zurg:/data:rslave                      # consumes rclone's FUSE mount
+      - /mnt:/mnt:rslave
+      - /mnt/alist:/alist:rslave
+    depends_on:
+      - rclone
+
+  jellyfin-ts:
+    image: tailscale/tailscale:latest
+    container_name: jellyfin-ts
+    restart: unless-stopped
+    hostname: jellyfin
+    environment:
+      - TS_HOSTNAME=jellyfin
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=true
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale-jellyfin:/var/lib/tailscale
+      - ./jellyfin-ts:/config
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    network_mode: "service:jellyfin-ts"             # tailnet-only via sidecar
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - GODEBUG=netdns=go+v4
+    volumes:
+      - ./jellyfin-config:/config
+      - ./jellyfin-cache:/cache
+      - /mnt/zurg:/data:rslave
+      - /mnt:/mnt:rslave
+      - /mnt/alist:/alist:rslave
+    depends_on:
+      - rclone
+      - jellyfin-ts
+
+volumes:
+  zurgdata:
+  tailscale-jellyfin:
+  tailscale-alist:
