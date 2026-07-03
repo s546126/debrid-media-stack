@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# medialib — storage + playback layer
+# debrid-media-stack — storage + playback layer
 #
 #   zurg        Real-Debrid  -> WebDAV
 #   rclone      mounts zurg   -> /mnt/zurg   (FUSE, rshared)
@@ -27,6 +27,12 @@ services:
       - ./zurg/scripts/plex_update.sh:/app/plex_update.sh
       - ./zurg/config.yml:/app/config.yml          # copy from zurg/config.yml.example
       - zurgdata:/app/data
+    healthcheck:
+      test: curl -f localhost:9999/dav/version.txt || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   rclone:
     image: rclone/rclone:latest
@@ -47,7 +53,8 @@ services:
     devices:
       - /dev/fuse:/dev/fuse:rwm
     depends_on:
-      - zurg
+      zurg:
+        condition: service_healthy                  # don't mount until the DAV endpoint answers
     command: "mount zurg: /data --allow-other --allow-non-empty --dir-cache-time 10s --vfs-cache-mode full --cache-dir /cache --vfs-cache-max-size 20G --buffer-size 64M"
 
   # ── optional: cloud-drive aggregation (alist) ───────────────────────────────
@@ -73,6 +80,7 @@ services:
     container_name: alist-ts
     restart: unless-stopped
     hostname: alist
+    # TS_USERSPACE=true → no TUN device / capabilities needed; runs unprivileged.
     environment:
       - TS_HOSTNAME=alist
       - TS_AUTHKEY=${TS_AUTHKEY}
@@ -82,10 +90,9 @@ services:
     volumes:
       - tailscale-alist:/var/lib/tailscale
       - ./alist-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
+    networks:
+      default:
+        aliases: [alist]                            # bridge peers reach alist:5244
 
   rclone-alist:
     image: rclone/rclone:latest
@@ -135,6 +142,7 @@ services:
     container_name: jellyfin-ts
     restart: unless-stopped
     hostname: jellyfin
+    # TS_USERSPACE=true → no TUN device / capabilities needed; runs unprivileged.
     environment:
       - TS_HOSTNAME=jellyfin
       - TS_AUTHKEY=${TS_AUTHKEY}
@@ -144,10 +152,9 @@ services:
     volumes:
       - tailscale-jellyfin:/var/lib/tailscale
       - ./jellyfin-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
+    networks:
+      default:
+        aliases: [jellyfin]
 
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest

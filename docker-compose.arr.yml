@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# medialib — acquisition layer (the "arr" stack). Separate compose project.
+# debrid-media-stack — acquisition layer (the "arr" stack). Separate compose project.
 #
 # Each user-facing service is fronted by its OWN Tailscale sidecar
 # (userspace + serve, tailscale node name = service name):
@@ -12,24 +12,36 @@
 # Bring this project up with an explicit name so the network is stable:
 #   docker compose -p arr -f docker-compose.arr.yml up -d
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Shared sidecar shape. TS_USERSPACE=true means no TUN device and no extra
+# capabilities are needed — the sidecar runs fully unprivileged.
+x-ts-sidecar: &ts-sidecar
+  image: tailscale/tailscale:latest
+  restart: unless-stopped
+
+x-ts-env: &ts-env
+  TS_AUTHKEY: ${TS_AUTHKEY}
+  TS_STATE_DIR: /var/lib/tailscale
+  TS_USERSPACE: "true"
+  TS_SERVE_CONFIG: /config/serve.json
+
+x-arr-env: &arr-env
+  PUID: ${PUID:-1000}
+  PGID: ${PGID:-1000}
+  TZ: ${TZ:-UTC}
+
 services:
   # ---------- prowlarr (indexer manager) ----------
   prowlarr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: prowlarr-ts
     hostname: prowlarr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=prowlarr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: prowlarr
     volumes:
       - tailscale-prowlarr:/var/lib/tailscale
       - ./prowlarr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [prowlarr]
@@ -40,27 +52,21 @@ services:
     restart: unless-stopped
     network_mode: "service:prowlarr-ts"
     depends_on: [prowlarr-ts]
-    environment: ["PUID=${PUID:-1000}", "PGID=${PGID:-1000}", "TZ=${TZ:-UTC}"]
+    environment: *arr-env
     volumes:
       - ./prowlarr-config:/config
 
   # ---------- sonarr (TV) ----------
   sonarr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: sonarr-ts
     hostname: sonarr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=sonarr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: sonarr
     volumes:
       - tailscale-sonarr:/var/lib/tailscale
       - ./sonarr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [sonarr]
@@ -71,27 +77,22 @@ services:
     restart: unless-stopped
     network_mode: "service:sonarr-ts"
     depends_on: [sonarr-ts]
-    environment: ["PUID=${PUID:-1000}", "PGID=${PGID:-1000}", "TZ=${TZ:-UTC}"]
+    environment: *arr-env
     volumes:
       - ./sonarr-config:/config
       - /mnt:/mnt:rslave                            # must see the same symlink space as decypharr
+
   # ---------- radarr (movies) ----------
   radarr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: radarr-ts
     hostname: radarr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=radarr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: radarr
     volumes:
       - tailscale-radarr:/var/lib/tailscale
       - ./radarr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [radarr]
@@ -102,28 +103,22 @@ services:
     restart: unless-stopped
     network_mode: "service:radarr-ts"
     depends_on: [radarr-ts]
-    environment: ["PUID=${PUID:-1000}", "PGID=${PGID:-1000}", "TZ=${TZ:-UTC}"]
+    environment: *arr-env
     volumes:
       - ./radarr-config:/config
       - /mnt:/mnt:rslave
 
   # ---------- bazarr (subtitles) ----------
   bazarr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: bazarr-ts
     hostname: bazarr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=bazarr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: bazarr
     volumes:
       - tailscale-bazarr:/var/lib/tailscale
       - ./bazarr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [bazarr]
@@ -134,28 +129,22 @@ services:
     restart: unless-stopped
     network_mode: "service:bazarr-ts"
     depends_on: [bazarr-ts]
-    environment: ["PUID=${PUID:-1000}", "PGID=${PGID:-1000}", "TZ=${TZ:-UTC}"]
+    environment: *arr-env
     volumes:
       - ./bazarr-config:/config
       - /mnt:/mnt:rslave
 
   # ---------- jellyseerr (request UI) ----------
   jellyseerr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: jellyseerr-ts
     hostname: jellyseerr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=jellyseerr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: jellyseerr
     volumes:
       - tailscale-jellyseerr:/var/lib/tailscale
       - ./jellyseerr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [jellyseerr]
@@ -166,27 +155,23 @@ services:
     restart: unless-stopped
     network_mode: "service:jellyseerr-ts"
     depends_on: [jellyseerr-ts]
-    environment: ["LOG_LEVEL=info", "TZ=${TZ:-UTC}", "PUID=${PUID:-1000}", "PGID=${PGID:-1000}"]
+    environment:
+      LOG_LEVEL: info
+      TZ: ${TZ:-UTC}
     volumes:
       - ./jellyseerr-config:/app/config
 
   # ---------- decypharr (qbittorrent shim -> Real-Debrid bridge) ----------
   decypharr-ts:
-    image: tailscale/tailscale:latest
+    <<: *ts-sidecar
     container_name: decypharr-ts
     hostname: decypharr
-    restart: unless-stopped
     environment:
-      - TS_HOSTNAME=decypharr
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=true
-      - TS_SERVE_CONFIG=/config/serve.json
+      <<: *ts-env
+      TS_HOSTNAME: decypharr
     volumes:
       - tailscale-decypharr:/var/lib/tailscale
       - ./decypharr-ts:/config
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
     networks:
       default:
         aliases: [decypharr]
@@ -197,7 +182,7 @@ services:
     restart: unless-stopped
     network_mode: "service:decypharr-ts"
     depends_on: [decypharr-ts]
-    environment: ["PUID=${PUID:-1000}", "PGID=${PGID:-1000}", "TZ=${TZ:-UTC}"]
+    environment: *arr-env
     volumes:
       - ./decypharr-config:/app                     # copy config.json.example -> config.json
       - /mnt:/mnt:rslave
@@ -207,7 +192,9 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     restart: unless-stopped
-    environment: ["LOG_LEVEL=info", "TZ=${TZ:-UTC}"]
+    environment:
+      LOG_LEVEL: info
+      TZ: ${TZ:-UTC}
     # no ports / no sidecar: only reachable on the bridge network by prowlarr
 
 volumes:

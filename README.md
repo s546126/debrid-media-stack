@@ -61,8 +61,13 @@ the docker bridge using the sidecar's network **alias** = service name, so e.g.
 
 ## Prerequisites
 
-1. **Linux host** with Docker + Docker Compose v2, and `/dev/fuse` + `/dev/net/tun`
-   available (standard on most distros).
+1. **Linux host** with Docker + Docker Compose v2 and `/dev/fuse` available
+   (standard on most distros). The rclone containers mount with `--allow-other`,
+   which requires `user_allow_other` in `/etc/fuse.conf`:
+
+   ```bash
+   grep -q '^user_allow_other' /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf
+   ```
 2. **Real-Debrid** subscription and API token — <https://real-debrid.com/apitoken>.
 3. **Tailscale**:
    - A tailnet (free tier is fine).
@@ -130,6 +135,11 @@ cause:
 
 - **Nothing is published to the public internet.** Sidecars use Tailscale `serve`
   (tailnet-only), **not** `funnel`. zurg is bound to `127.0.0.1` only.
+- **Sidecars run unprivileged.** `TS_USERSPACE=true` means no `NET_ADMIN`, no
+  `/dev/net/tun` — a compromised sidecar has no special kernel access.
+- Images track `:latest` for simplicity. For reproducible deployments, pin
+  digests (`image: tailscale/tailscale@sha256:...`) or run Renovate/Watchtower
+  deliberately — don't blind-auto-update a stack that holds FUSE mounts.
 - The arr UIs ship with **no login** (`AuthenticationMethod=None`) because tailnet
   membership is the access boundary. If multiple people share your tailnet, enable
   app-level auth in each service.
