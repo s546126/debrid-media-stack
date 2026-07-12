@@ -109,9 +109,8 @@ sudo chown -R "$(id -u):$(id -g)" /mnt/data/media/library   # must match PUID/PG
 sudo cp mnt-rshared.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now mnt-rshared.service
 
-# 5. shared network joining the two compose projects (jellyseerr -> jellyfin),
-#    then bring up storage/playback first, then the arr stack
-docker network create media-shared
+# 5. bring up storage/playback FIRST (it also creates the shared media-shared
+#    network that the arr project references), then the arr stack
 docker compose -f docker-compose.yml up -d
 docker compose -p arr -f docker-compose.arr.yml up -d
 

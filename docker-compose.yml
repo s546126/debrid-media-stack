@@ -236,7 +236,8 @@ volumes:
 
 networks:
   # Shared bridge joining this project with the arr project, so e.g. Jellyseerr
-  # can reach http://jellyfin:8096. Create it once before first `up`:
-  #   docker network create media-shared
+  # can reach http://jellyfin:8096. THIS project owns and creates it (fixed
+  # name, no manual `docker network create` needed); the arr project references
+  # it as external — so always bring `media` up before `arr`.
   media-shared:
-    external: true
+    name: media-shared

@@ -223,7 +223,7 @@ volumes:
 
 networks:
   # Shared bridge joining this project with the media project (jellyfin).
-  # Create it once before first `up`:
-  #   docker network create media-shared
+  # The MEDIA project owns/creates it (networks.media-shared.name there), so
+  # bring `media` up before `arr` — no manual `docker network create` needed.
   media-shared:
     external: true
