@@ -12,9 +12,15 @@ check_for_changes_every_secs: 10
 # repair_every_mins: 60
 enable_repair: true
 auto_delete_rar_torrents: true
-# Triggers a Plex partial scan when zurg detects library changes.
-# Configure zurg/scripts/plex_update.sh with your Plex URL + token, or remove this line.
-on_library_update: sh plex_update.sh "$@"
+# Optional: trigger a Plex partial scan when zurg detects library changes.
+# 1. Edit zurg/scripts/plex_update.sh and set your Plex URL + token.
+# 2. Install xmllint in the zurg container: docker compose exec zurg apk add libxml2-utils
+#    NOTE: `exec ... apk add` only modifies the RUNNING container — the package is
+#    lost on every image pull/recreate, silently breaking this hook. For a
+#    persistent setup, build a tiny derived image (FROM ghcr.io/debridmediamanager/zurg-testing
+#    + RUN apk add libxml2-utils) or rewrite plex_update.sh to not need xmllint.
+# 3. Uncomment the line below. (Jellyfin picks up changes on its own scan schedule.)
+# on_library_update: sh plex_update.sh "$@"
 
 directories:
   anime:

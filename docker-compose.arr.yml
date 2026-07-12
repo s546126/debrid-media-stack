@@ -15,12 +15,24 @@
 
 # Shared sidecar shape. TS_USERSPACE=true means no TUN device and no extra
 # capabilities are needed — the sidecar runs fully unprivileged.
+#
+# NOTE (sidecar/app coupling): each app shares its sidecar's network namespace
+# (network_mode: "service:<name>-ts"). If a sidecar is restarted or recreated
+# ALONE (tailscaled crash, image update, `up -d <name>-ts`), the app keeps
+# running in the orphaned namespace: the tailnet URL returns 502 and the app
+# loses all network. Always recreate the pair together, e.g.:
+#   docker compose -p arr -f docker-compose.arr.yml up -d --force-recreate sonarr-ts sonarr
+# See "Sidecar/app coupling" in the README.
 x-ts-sidecar: &ts-sidecar
   image: tailscale/tailscale:latest
   restart: unless-stopped
 
 x-ts-env: &ts-env
   TS_AUTHKEY: ${TS_AUTHKEY}
+  # Auth key is only used for the FIRST login; afterwards the persisted state
+  # volume is reused, so the key expiring (max 90 days) does NOT break running
+  # nodes — you only need a fresh key to onboard NEW sidecars.
+  TS_AUTH_ONCE: "true"
   TS_STATE_DIR: /var/lib/tailscale
   TS_USERSPACE: "true"
   TS_SERVE_CONFIG: /config/serve.json
@@ -148,6 +160,10 @@ services:
     networks:
       default:
         aliases: [jellyseerr]
+      # Joined to the media project's shared network so Jellyseerr (which lives
+      # in this sidecar's netns) can reach http://jellyfin:8096. Attach other
+      # sidecars here the same way if you point their apps at Jellyfin.
+      media-shared: {}
 
   jellyseerr:
     image: fallenbagel/jellyseerr:latest
@@ -204,3 +220,10 @@ volumes:
   tailscale-bazarr:
   tailscale-jellyseerr:
   tailscale-decypharr:
+
+networks:
+  # Shared bridge joining this project with the media project (jellyfin).
+  # Create it once before first `up`:
+  #   docker network create media-shared
+  media-shared:
+    external: true

@@ -1,0 +1,26 @@
+# Makes /mnt a shared mount at boot so the rclone FUSE mounts propagate into
+# the consumer containers (plex/jellyfin/arr). Without this, on hosts where
+# /mnt is not already shared, dockerd refuses to start rclone after a reboot
+# ("path /mnt/zurg is mounted on /mnt but it is not a shared mount") and the
+# whole stack stays down until the command is re-run by hand.
+#
+# Install (see README Setup step 4):
+#   sudo cp mnt-rshared.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mnt-rshared.service
+
+[Unit]
+Description=Make /mnt a shared mount (rclone FUSE propagation for debrid-media-stack)
+After=local-fs.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+# `mount --make-rshared` fails (exit 32) if /mnt is a plain directory rather
+# than a mountpoint. Bind-mounting /mnt onto itself first makes it a mountpoint,
+# so --make-rshared always succeeds regardless of the host's layout.
+ExecStart=/bin/sh -c 'mountpoint -q /mnt || mount --bind /mnt /mnt; mount --make-rshared /mnt'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

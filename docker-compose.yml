@@ -43,7 +43,11 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
     volumes:
-      - /mnt/zurg:/data:rshared                     # FUSE mount, propagated to siblings
+      # Bind the PARENT of the mountpoint, not /mnt/zurg itself. If a previous
+      # rclone died without a clean unmount, /mnt/zurg is a stale FUSE endpoint
+      # ("transport endpoint is not connected") and dockerd would fail to stat it
+      # as a bind source — the replacement container could then never start.
+      - /mnt:/mnt:rshared                           # FUSE mount, propagated to siblings
       - ./zurg/rclone.conf:/config/rclone/rclone.conf
       - ./cache/zurg:/cache
     cap_add:
@@ -55,14 +59,32 @@ services:
     depends_on:
       zurg:
         condition: service_healthy                  # don't mount until the DAV endpoint answers
-    command: "mount zurg: /data --allow-other --allow-non-empty --dir-cache-time 10s --vfs-cache-mode full --cache-dir /cache --vfs-cache-max-size 20G --buffer-size 64M"
+    # Lazy-unmount any stale FUSE endpoint left by an unclean shutdown (docker
+    # kill / OOM / SIGKILL during recreate while a player held files open),
+    # then mount fresh. Manual host-side escape hatch: fusermount3 -uz /mnt/zurg
+    entrypoint: >
+      sh -c 'fusermount3 -uz /mnt/zurg 2>/dev/null;
+      exec rclone mount zurg: /mnt/zurg --allow-other --allow-non-empty
+      --dir-cache-time 10s --vfs-cache-mode full --cache-dir /cache
+      --vfs-cache-max-size 20G --buffer-size 64M'
+    healthcheck:
+      # healthy only once the FUSE mount is actually live — consumers gate on this
+      test: ["CMD-SHELL", "grep -q ' /mnt/zurg fuse.rclone ' /proc/mounts"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ── optional: cloud-drive aggregation (alist) ───────────────────────────────
-  # Drop the alist / alist-ts / rclone-alist services if you only use Real-Debrid.
+  # DISABLED BY DEFAULT (compose profile "alist"). If you only use Real-Debrid,
+  # the plain `up -d` below never starts these three services. Enable with:
+  #   docker compose --profile alist -f docker-compose.yml up -d
+  # (or export COMPOSE_PROFILES=alist)
   alist:
     image: xhofe/alist:latest
     container_name: alist
     restart: unless-stopped
+    profiles: ["alist"]
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -79,11 +101,15 @@ services:
     image: tailscale/tailscale:latest
     container_name: alist-ts
     restart: unless-stopped
+    profiles: ["alist"]
     hostname: alist
     # TS_USERSPACE=true → no TUN device / capabilities needed; runs unprivileged.
+    # TS_AUTH_ONCE=true → the auth key is only used for the FIRST login; after
+    # that the persisted state volume is reused (the key may expire safely).
     environment:
       - TS_HOSTNAME=alist
       - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_AUTH_ONCE=true
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=true
       - TS_SERVE_CONFIG=/config/serve.json
@@ -98,12 +124,14 @@ services:
     image: rclone/rclone:latest
     container_name: rclone-alist
     restart: unless-stopped
+    profiles: ["alist"]
     environment:
       TZ: ${TZ:-UTC}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
     volumes:
-      - /mnt/alist:/data:rshared
+      # parent bind, same stale-FUSE rationale as the rclone service above
+      - /mnt:/mnt:rshared
       - ./zurg/rclone.conf:/config/rclone/rclone.conf
       - ./cache/alist:/cache
     cap_add:
@@ -114,7 +142,17 @@ services:
       - /dev/fuse:/dev/fuse:rwm
     depends_on:
       - alist
-    command: "mount alist: /data --allow-other --allow-non-empty --dir-cache-time 30s --vfs-cache-mode full --cache-dir /cache --vfs-cache-max-size 10G --buffer-size 32M"
+    entrypoint: >
+      sh -c 'fusermount3 -uz /mnt/alist 2>/dev/null;
+      exec rclone mount alist: /mnt/alist --allow-other --allow-non-empty
+      --dir-cache-time 30s --vfs-cache-mode full --cache-dir /cache
+      --vfs-cache-max-size 10G --buffer-size 32M'
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q ' /mnt/alist fuse.rclone ' /proc/mounts"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ── players ─────────────────────────────────────────────────────────────────
   plex:
@@ -131,11 +169,14 @@ services:
     volumes:
       - ./plex-config:/config
       - ./plex-transcode:/transcode
-      - /mnt/zurg:/data:rslave                      # consumes rclone's FUSE mount
+      # Bind only the PARENT /mnt (not /mnt/zurg or /mnt/alist directly): a
+      # stale FUSE endpoint would make dockerd fail to stat a direct bind
+      # source on restart. The FUSE mounts propagate in via rslave — point
+      # libraries at /mnt/... paths (e.g. /mnt/data/media/library).
       - /mnt:/mnt:rslave
-      - /mnt/alist:/alist:rslave
     depends_on:
-      - rclone
+      rclone:
+        condition: service_healthy                  # wait for a LIVE mount, not just the container
 
   jellyfin-ts:
     image: tailscale/tailscale:latest
@@ -143,9 +184,18 @@ services:
     restart: unless-stopped
     hostname: jellyfin
     # TS_USERSPACE=true → no TUN device / capabilities needed; runs unprivileged.
+    # TS_AUTH_ONCE=true → the auth key is only used for the FIRST login; after
+    # that the persisted state volume is reused (the key may expire safely).
+    #
+    # NOTE (sidecar/app coupling): jellyfin shares this container's network
+    # namespace. If you restart or recreate ONLY the sidecar, restart the app
+    # with it (`docker compose up -d --force-recreate jellyfin-ts jellyfin`),
+    # otherwise the app is left in an orphaned namespace: serve returns 502 and
+    # the app has no network. See "Sidecar/app coupling" in the README.
     environment:
       - TS_HOSTNAME=jellyfin
       - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_AUTH_ONCE=true
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=true
       - TS_SERVE_CONFIG=/config/serve.json
@@ -155,6 +205,8 @@ services:
     networks:
       default:
         aliases: [jellyfin]
+      media-shared:
+        aliases: [jellyfin]                         # arr project reaches http://jellyfin:8096 here
 
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
@@ -169,14 +221,22 @@ services:
     volumes:
       - ./jellyfin-config:/config
       - ./jellyfin-cache:/cache
-      - /mnt/zurg:/data:rslave
+      # Parent bind only — see the note on plex's volumes above.
       - /mnt:/mnt:rslave
-      - /mnt/alist:/alist:rslave
     depends_on:
-      - rclone
-      - jellyfin-ts
+      rclone:
+        condition: service_healthy                  # wait for a LIVE mount, not just the container
+      jellyfin-ts:
+        condition: service_started
 
 volumes:
   zurgdata:
   tailscale-jellyfin:
   tailscale-alist:
+
+networks:
+  # Shared bridge joining this project with the arr project, so e.g. Jellyseerr
+  # can reach http://jellyfin:8096. Create it once before first `up`:
+  #   docker network create media-shared
+  media-shared:
+    external: true
