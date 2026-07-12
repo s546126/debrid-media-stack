@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Media Center</title>
+<meta name="color-scheme" content="light dark">
+<style>
+/* ============ tokens — light default, dark via media query ============ */
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f7;
+  --fg: #1d1d1f;
+  --fg-2: rgba(29, 29, 31, 0.56);
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #ffffff;
+  --card-border: rgba(0, 0, 0, 0.04);
+  --chrome: rgba(245, 245, 247, 0.72);
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  --shadow-hover: 0 2px 4px rgba(0,0,0,.05), 0 12px 32px rgba(0,0,0,.10);
+  --ok: #30d158;
+  --off: rgba(60,60,67,.24);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --fg: #f5f5f7;
+    --fg-2: rgba(235, 235, 245, 0.6);
+    --card: rgba(28, 28, 30, 0.72);
+    --card-solid: #1c1c1e;
+    --card-border: rgba(255, 255, 255, 0.08);
+    --chrome: rgba(0, 0, 0, 0.6);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
+    --shadow-hover: 0 2px 4px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.5);
+    --off: rgba(235,235,245,.16);
+  }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font: 100%/1.5 system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ============ translucent chrome — content scrolls underneath ============ */
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--chrome);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+/* scroll edge effect instead of a hard 1px divider */
+header::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -12px; height: 12px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.05), transparent);
+  opacity: 0; transition: opacity 300ms ease; pointer-events: none;
+}
+body.scrolled header::after { opacity: 1; }
+.hwrap {
+  max-width: 980px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: baseline; gap: 12px;
+}
+.hwrap b { font-size: 1.05rem; letter-spacing: -0.01em; font-weight: 600; }
+.hwrap span { font-size: .8rem; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.hwrap .net { margin-left: auto; }
+
+main { max-width: 980px; margin: 0 auto; padding: 40px 24px 72px; }
+
+/* display type: tight leading, negative tracking as it grows */
+h1 {
+  font-size: clamp(1.9rem, 4.5vw, 2.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  font-optical-sizing: auto;
+}
+.sub { color: var(--fg-2); margin: 10px 0 0; font-size: 1rem; }
+
+section { margin-top: 44px; }
+h2 {
+  font-size: .82rem; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--fg-2); margin-bottom: 14px;
+}
+
+.grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* ============ cards ============ */
+.card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+@media (hover: hover) {
+  .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+}
+/* feedback lives on the press, and it's instant */
+.card:active { transform: scale(0.97); transition: transform 100ms ease-out; }
+
+.icon {
+  width: 46px; height: 46px; border-radius: 12px; flex: none;
+  display: grid; place-items: center; font-size: 24px;
+  background: var(--tint, rgba(120,120,128,.12));
+}
+.meta { min-width: 0; }
+.meta b { display: block; font-size: .98rem; font-weight: 600; letter-spacing: -0.006em; }
+.meta small { display: block; color: var(--fg-2); font-size: .8rem; margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* status dot — quiet, no layout shift */
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; margin-left: auto; flex: none;
+  background: var(--off); transition: background 400ms ease;
+}
+.dot.on { background: var(--ok); }
+.dot.checking { animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .35; } }
+
+/* ============ entry — subtle rise, staggered ============ */
+.card, h1, .sub { animation: rise 500ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+section:nth-of-type(1) .card { animation-delay: 60ms; }
+section:nth-of-type(2) .card { animation-delay: 110ms; }
+section:nth-of-type(3) .card { animation-delay: 160ms; }
+section:nth-of-type(4) .card { animation-delay: 210ms; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+footer {
+  max-width: 980px; margin: 0 auto; padding: 0 24px 40px;
+  color: var(--fg-2); font-size: .78rem;
+}
+footer code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+
+/* ============ accessibility preferences ============ */
+@media (prefers-reduced-motion: reduce) {
+  .card, h1, .sub { animation: fadeonly 200ms ease both; }
+  @keyframes fadeonly { from { opacity: 0; } }
+  .card, .card:hover, .card:active { transform: none; transition: opacity 200ms ease; }
+  .dot.checking { animation: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  header { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .card { background: var(--card-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .card { border-color: var(--fg-2); }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hwrap">
+    <b>Media Center</b>
+    <span id="clock"></span>
+    <span class="net">tailnet only</span>
+  </div>
+</header>
+
+<main>
+  <h1 id="greet">Good evening</h1>
+  <p class="sub">Your Real-Debrid pipeline is ready. Start with a request.</p>
+
+  <section>
+    <h2>Watch</h2>
+    <div class="grid">
+      <a class="card" data-svc="jellyfin">
+        <span class="icon" style="--tint: rgba(120, 82, 255, .14)">🍿</span>
+        <span class="meta"><b>Jellyfin</b><small>open-source player, every device</small></span>
+        <span class="dot checking"></span>
+      </a>
+      <a class="card" id="plex-card">
+        <span class="icon" style="--tint: rgba(229, 160, 13, .16)">🎬</span>
+        <span class="meta"><b>Plex</b><small>host network, own account system</small></span>
+        <span class="dot"></span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Request</h2>
+    <div class="grid">
+      <a class="card" data-svc="jellyseerr">
+        <span class="icon" style="--tint: rgba(255, 69, 58, .13)">🎯</span>
+        <span class="meta"><b>Jellyseerr</b><small>search &amp; request, auto-pipelined</small></span>
+        <span class="dot checking"></span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Manage</h2>
+    <div class="grid">
+      <a class="card" data-svc="sonarr">
+        <span class="icon" style="--tint: rgba(48, 176, 199, .14)">📺</span>
+        <span class="meta"><b>Sonarr</b><small>TV shows</small></span>
+        <span class="dot checking"></span>
+      </a>
+      <a class="card" data-svc="radarr">
+        <span class="icon" style="--tint: rgba(255, 159, 10, .14)">🎥</span>
+        <span class="meta"><b>Radarr</b><small>movies</small></span>
+        <span class="dot checking"></span>
+      </a>
+      <a class="card" data-svc="prowlarr">
+        <span class="icon" style="--tint: rgba(191, 90, 242, .14)">🔍</span>
+        <span class="meta"><b>Prowlarr</b><small>indexers</small></span>
+        <span class="dot checking"></span>
+      </a>
+      <a class="card" data-svc="bazarr">
+        <span class="icon" style="--tint: rgba(50, 173, 230, .14)">💬</span>
+        <span class="meta"><b>Bazarr</b><small>subtitles</small></span>
+        <span class="dot checking"></span>
+      </a>
+      <a class="card" data-svc="decypharr">
+        <span class="icon" style="--tint: rgba(48, 209, 88, .13)">⚡</span>
+        <span class="meta"><b>Decypharr</b><small>Real-Debrid bridge</small></span>
+        <span class="dot checking"></span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cloud drives</h2>
+    <div class="grid">
+      <a class="card" data-svc="alist">
+        <span class="icon" style="--tint: rgba(10, 132, 255, .13)">☁️</span>
+        <span class="meta"><b>Alist</b><small>cloud-drive aggregation (optional)</small></span>
+        <span class="dot checking"></span>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Jellyseerr → Sonarr/Radarr → Decypharr → Real-Debrid → zurg → rclone <code>/mnt/zurg</code> → library → players
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- config ----------------------------------------------------------
+   * PLEX_URL: Plex runs on the HOST network, so its address can't be derived
+   * from this page's hostname. Set it to your host's tailnet address, e.g.
+   *   "http://your-host.your-tailnet.ts.net:32400/web"
+   * Leave empty to link to the Plex web app instead. */
+  var PLEX_URL = "";
+
+  /* Service URLs are derived from this page's own hostname:
+   * media.<tailnet>.ts.net -> https://<svc>.<tailnet>.ts.net
+   * Zero configuration as long as the sidecar node names match the compose
+   * defaults. Falls back to a placeholder when opened from a file:// URL. */
+  var suffix = location.hostname.replace(/^media\./, "");
+  var derived = suffix && suffix !== location.hostname;
+
+  document.querySelectorAll("[data-svc]").forEach(function (card) {
+    var svc = card.dataset.svc;
+    var dot = card.querySelector(".dot");
+    if (!derived) { // opened locally — links still work once served at media.<tailnet>
+      card.href = "#";
+      dot.classList.remove("checking");
+      card.title = "Serve this page at https://media.<your-tailnet>.ts.net for links to resolve";
+      return;
+    }
+    var url = "https://" + svc + "." + suffix;
+    card.href = url;
+
+    /* reachability dot — opaque no-cors probe; TLS+TCP success = online */
+    var ctrl = new AbortController();
+    var t = setTimeout(function () { ctrl.abort(); }, 5000);
+    fetch(url, { mode: "no-cors", signal: ctrl.signal, cache: "no-store" })
+      .then(function () { dot.classList.add("on"); card.title = "online"; })
+      .catch(function () { card.title = "unreachable"; })
+      .finally(function () { clearTimeout(t); dot.classList.remove("checking"); });
+  });
+
+  /* Plex card */
+  var plex = document.getElementById("plex-card");
+  plex.href = PLEX_URL || "https://app.plex.tv/desktop";
+  if (PLEX_URL) {
+    var pd = plex.querySelector(".dot");
+    pd.classList.add("checking");
+    var pc = new AbortController();
+    var pt = setTimeout(function () { pc.abort(); }, 5000);
+    fetch(PLEX_URL, { mode: "no-cors", signal: pc.signal, cache: "no-store" })
+      .then(function () { pd.classList.add("on"); })
+      .catch(function () {})
+      .finally(function () { clearTimeout(pt); pd.classList.remove("checking"); });
+  }
+
+  /* greeting + clock */
+  var greet = document.getElementById("greet");
+  var clock = document.getElementById("clock");
+  function tick() {
+    var d = new Date(), h = d.getHours();
+    greet.textContent = h < 5 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    clock.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  tick(); setInterval(tick, 30000);
+
+  /* scroll edge effect */
+  var ticking = false;
+  addEventListener("scroll", function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      document.body.classList.toggle("scrolled", scrollY > 8);
+      ticking = false;
+    });
+  }, { passive: true });
+})();
+</script>
+</body>
+</html>

@@ -185,6 +185,20 @@ docker compose -p arr -f docker-compose.arr.yml up -d --force-recreate sonarr-ts
 This is also the main reason not to blind-auto-update the `tailscale/tailscale`
 `:latest` image (see the pinning note under Security).
 
+## Unified portal (optional)
+
+`https://media.<tailnet>.ts.net` — a single self-contained landing page (no
+frameworks, no external requests) with cards for every service and live
+reachability dots. Service links are **derived from the page's own hostname**
+(`media.<tailnet>` → `sonarr.<tailnet>` …), so it works with zero configuration;
+the design follows Apple's fluid-interface guidelines (system type with optical
+tracking, translucent chrome, pointer-down feedback, `prefers-reduced-motion` /
+`-transparency` / `-contrast` support, automatic light/dark).
+
+The `portal` + `portal-ts` services in `docker-compose.yml` serve it. Optional:
+set `PLEX_URL` at the top of `portal/index.html` to your host's tailnet address
+(Plex runs on the host network, so it can't be auto-derived).
+
 ## Security notes
 
 - **No admin/arr UI is published to the public internet.** Sidecars use Tailscale

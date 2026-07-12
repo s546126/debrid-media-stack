@@ -229,10 +229,41 @@ services:
       jellyfin-ts:
         condition: service_started
 
+  # ---------- portal (optional unified entry: https://media.<tailnet>.ts.net) --
+  # A single self-contained page linking every service, with live reachability
+  # dots. Service URLs are derived from the page's own hostname, so no
+  # configuration is needed (set PLEX_URL inside portal/index.html if wanted).
+  portal-ts:
+    image: tailscale/tailscale:latest
+    container_name: portal-ts
+    restart: unless-stopped
+    hostname: media
+    environment:
+      - TS_HOSTNAME=media
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_AUTH_ONCE=true
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=true
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale-portal:/var/lib/tailscale
+      - ./portal-ts:/config
+
+  portal:
+    image: nginx:alpine
+    container_name: portal
+    restart: unless-stopped
+    network_mode: "service:portal-ts"
+    depends_on:
+      - portal-ts
+    volumes:
+      - ./portal:/usr/share/nginx/html:ro
+
 volumes:
   zurgdata:
   tailscale-jellyfin:
   tailscale-alist:
+  tailscale-portal:
 
 networks:
   # Shared bridge joining this project with the arr project, so e.g. Jellyseerr
