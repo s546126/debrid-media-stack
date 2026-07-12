@@ -1,0 +1,26 @@
+name: validate
+on:
+  push:
+  pull_request:
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stub secrets so compose can interpolate
+        run: cp .env.example .env
+      - name: Validate media compose
+        run: docker compose -f docker-compose.yml config -q
+      - name: Validate media compose (alist profile)
+        run: docker compose --profile alist -f docker-compose.yml config -q
+      - name: Validate arr compose
+        run: docker compose -p arr -f docker-compose.arr.yml config -q
+      - name: Validate serve.json files
+        run: |
+          for f in *-ts/serve.json; do
+            jq empty "$f" || { echo "INVALID JSON: $f"; exit 1; }
+            jq -e '.Web["${TS_CERT_DOMAIN}:443"].Handlers["/"].Proxy' "$f" > /dev/null \
+              || { echo "MISSING proxy handler: $f"; exit 1; }
+            echo "ok: $f"
+          done
