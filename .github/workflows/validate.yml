@@ -14,6 +14,10 @@ jobs:
         run: docker compose -f docker-compose.yml config -q
       - name: Validate media compose (alist profile)
         run: docker compose --profile alist -f docker-compose.yml config -q
+      - name: Validate media compose (agent profile)
+        run: docker compose --profile agent -f docker-compose.yml config -q
+      - name: Validate media compose (all profiles)
+        run: docker compose --profile alist --profile agent -f docker-compose.yml config -q
       - name: Validate arr compose
         run: docker compose -p arr -f docker-compose.arr.yml config -q
       - name: Validate serve.json files
