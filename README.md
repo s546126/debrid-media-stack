@@ -116,6 +116,10 @@ docker compose -p arr -f docker-compose.arr.yml up -d
 
 # (optional) also using alist? its services are profile-gated and off by default:
 #   docker compose --profile alist -f docker-compose.yml up -d
+
+# (optional) media-butler chatbot on the portal? fill LLM_BASE_URL / LLM_API_KEY /
+# JELLYSEERR_KEY in .env first, then:
+#   docker compose --profile agent -f docker-compose.yml up -d
 ```
 
 After the sidecars register (`tailscale status` from the host should list 7 nodes,
@@ -182,6 +186,15 @@ Always recreate the pair together:
 docker compose -p arr -f docker-compose.arr.yml up -d --force-recreate sonarr-ts sonarr   # etc. per pair
 ```
 
+The portal is a **trio** once the media-butler agent is enabled (portal-ts +
+portal + agent share one namespace). Set `COMPOSE_PROFILES=agent` in `.env` so
+routine `docker compose up -d` runs see the agent, and recreate all three
+together:
+
+```bash
+docker compose --profile agent up -d --force-recreate portal-ts portal agent
+```
+
 This is also the main reason not to blind-auto-update the `tailscale/tailscale`
 `:latest` image (see the pinning note under Security).
 
@@ -198,6 +211,26 @@ tracking, translucent chrome, pointer-down feedback, `prefers-reduced-motion` /
 The `portal` + `portal-ts` services in `docker-compose.yml` serve it. Optional:
 set `PLEX_URL` at the top of `portal/index.html` to your host's tailnet address
 (Plex runs on the host network, so it can't be auto-derived).
+
+### Media-butler chatbot (optional, off by default)
+
+The portal can host a small chat assistant that searches and requests media
+through Jellyseerr (tool calling against its API). It is gated behind the
+`agent` compose profile and a floating chat button that only appears when the
+backend is actually running (`/agent/health`), so the base portal is unchanged
+unless you opt in.
+
+1. In `.env`, set `LLM_BASE_URL` + `LLM_API_KEY` (any OpenAI-compatible
+   endpoint — OpenAI, LiteLLM, one-api, …) and `JELLYSEERR_KEY`
+   (Jellyseerr → *Settings → General → API Key*).
+2. `docker compose --profile agent -f docker-compose.yml up -d`
+
+The backend (`portal-agent/agent.py`, stdlib-only Python) shares the portal
+sidecar's network namespace, so the browser talks to it same-origin at
+`https://media.<tailnet>.ts.net/agent/` — no extra tailnet node, cert, or
+CORS. All keys stay server-side; the browser sends none, and tailnet
+membership is the auth boundary. It adds no tailnet node, so the
+`tailscale status` node count above is unchanged.
 
 ## Security notes
 

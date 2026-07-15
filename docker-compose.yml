@@ -248,16 +248,53 @@ services:
     volumes:
       - tailscale-portal:/var/lib/tailscale
       - ./portal-ts:/config
+    networks:
+      default: {}
+      media-shared: {}          # lets the agent reach jellyseerr-ts:5055 on the bridge
 
   portal:
     image: nginx:alpine
     container_name: portal
     restart: unless-stopped
+    # With the "agent" profile enabled, portal-ts's netns couples a TRIO
+    # (portal-ts + portal + agent) — recreate all three together (see agent).
     network_mode: "service:portal-ts"
     depends_on:
       - portal-ts
     volumes:
       - ./portal:/usr/share/nginx/html:ro
+      - ./portal-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # ---------- media-butler agent (optional, profile "agent") -----------------
+  # Chatbot backend for the portal: holds the LLM-gateway + Jellyseerr keys
+  # server-side and can actually search/request media (tool calling). Shares
+  # the portal sidecar's netns, so it is reachable same-origin at
+  # https://media.<tailnet>.ts.net/agent/ — no extra node, cert, or CORS.
+  # Enable with:  docker compose --profile agent up -d
+  # Requires LLM_BASE_URL / LLM_API_KEY / JELLYSEERR_KEY in .env.
+  #
+  # NOTE: agent shares portal-ts's network namespace. If portal-ts is recreated
+  # without the agent profile active, the agent is left in a dead namespace
+  # (/agent/ returns 502). Set COMPOSE_PROFILES=agent in .env after enabling,
+  # and always recreate the trio together:
+  #   docker compose --profile agent up -d --force-recreate portal-ts portal agent
+  agent:
+    image: python:3.12-alpine
+    container_name: agent
+    restart: unless-stopped
+    profiles: ["agent"]
+    network_mode: "service:portal-ts"
+    depends_on:
+      - portal-ts
+    environment:
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - JELLYSEERR_BASE=http://jellyseerr-ts:5055   # docker bridge via media-shared
+      - JELLYSEERR_KEY=${JELLYSEERR_KEY:-}
+      - PORT=8787
+    volumes:
+      - ./portal-agent:/app:ro
+    command: ["python3", "/app/agent.py"]
 
 volumes:
   zurgdata:
